@@ -1,0 +1,7 @@
+scripts:
+  
+  - name: 2-HOST-INSTANCIA-SCHEMA-ACTION-NOMBRETABLA.sql
+    expected_result:
+      message: filas ingresadas = 1
+
+

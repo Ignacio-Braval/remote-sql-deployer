@@ -1,0 +1,97 @@
+clone:
+  depth: full
+
+definitions:
+  steps:
+    - step: &Validacion
+        name: "Validando Scripts"
+        oidc: true
+        image:
+          name: <DOCKER_IMAGE_VALIDACION>
+          aws:
+            oidc-role: <OIDC_ROLE_ARN>
+        runs-on:
+          - "aws"
+          - "self.hosted"
+          - "linux"
+        script:
+          - echo "Obteniendo identidad de AWS..."
+          - echo "<AWS_CALLER_ID>"
+
+          # Assume intermediate role
+          - export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" <ASSUME_ROLE_PLACEHOLDER>)
+          - echo "<AWS_CALLER_ID>"
+
+          # Assume security role to retrieve secrets
+          - export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" <SECURITY_ROLE_PLACEHOLDER>)
+          - echo "<AWS_CALLER_ID>"
+
+          # Fetch SSH key from SM (placeholder)
+          - echo "<SSH_KEY_PLACEHOLDER>" > ~/.ssh/id_rsa
+          - chmod 400 ~/.ssh/id_rsa
+          - eval $(ssh-agent -s)
+          - ssh-add ~/.ssh/id_rsa
+
+          # Clone cicd repo at branch develop
+          - git clone <CICD_REPO_URL_PLACEHOLDER> -b <BRANCH_PLACEHOLDER> || echo "Error clonning repository" | exit 1
+
+          # Mark it as safe
+          - git config --global --add safe.directory /opt/atlassian/pipelines/agent/build
+
+          # Move back to base ec2 role
+          - unset AWS_ACCESS_KEY_ID
+          - unset AWS_SECRET_ACCESS_KEY
+          - unset AWS_SESSION_TOKEN
+
+          - secretPath="<SHARED_SECRET_PATH_PLACEHOLDER>"
+          - echo ${secretPath}
+
+          # get env variables (placeholder)
+          - python3 <CICD_REPO_PATH_PLACEHOLDER>/environment_variables.py --shared_secret ${secretPath} --branch <BRANCH_PLACEHOLDER> --sts_role <STS_ROLE_PLACEHOLDER> --security_role <SECURITY_ROLE_PLACEHOLDER> --assume
+          - source source_vars.sh
+
+          # 01_valida_scripts
+          - python3 <CICD_REPO_PATH_PLACEHOLDER>/01_valida_scripts.py
+
+        artifacts:
+          - cicd/**
+          - files/**
+
+    - step: &Despliegue
+        name: "Instalacion de nuevos cambios"
+        oidc: true
+        image:
+          name: <DOCKER_IMAGE_DESPLIEGUE>
+          aws:
+            oidc-role: <OIDC_ROLE_ARN>
+        runs-on:
+          - "aws"
+          - "self.hosted"
+          - "linux"
+        script:
+          - export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" <ASSUME_ROLE_PLACEHOLDER>)
+          - echo "<AWS_CALLER_ID>"
+          
+          - secretPath="<SHARED_SECRET_PATH_PLACEHOLDER>"
+          - echo ${secretPath}
+
+          # get env variables (placeholder)
+          - python3 <CICD_REPO_PATH_PLACEHOLDER>/environment_variables.py --shared_secret ${secretPath} --branch <BRANCH_PLACEHOLDER> --sts_role <STS_ROLE_PLACEHOLDER> --security_role <SECURITY_ROLE_PLACEHOLDER> --assume
+          - source source_vars.sh
+
+          # 02_instala_scripts
+          - python3 <CICD_REPO_PATH_PLACEHOLDER>/02_instala_scripts.py
+
+        artifacts:
+          - cicd/**
+          - files/**
+
+pipelines:
+  custom:
+    deploy_oracle:
+      - step:
+          <<: *Validacion
+      # - step:
+      #     <<: *SonarqubeAnalisis
+      - step:
+          <<: *Despliegue
